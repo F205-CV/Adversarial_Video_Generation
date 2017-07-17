@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorflow.contrib.rnn as rnn
 from tfutils import w, b, conv_out_size
 import constants as c
 
@@ -53,10 +54,11 @@ class DScaleModel:
         ##
         with tf.name_scope('input'):
             self.input_frames = tf.placeholder(
-                tf.float32, shape=[None, self.height, self.width, self.conv_layer_fms[0]])
+                tf.float32, shape = [None, self.height, self.width, self.conv_layer_fms[0]])
 
             # use variable batch_size for more flexibility
-            self.batch_size = tf.shape(self.input_frames)[0]
+            self.batch_size = tf.shape(self.input_frames)[0] / (c.HIST_LEN + 1)
+            # self.batch_size = c.BATCH_SIZE
 
         ##
         # Layer setup
@@ -81,12 +83,16 @@ class DScaleModel:
                     last_out_width = conv_out_size(
                         last_out_width, c.PADDING_D, self.kernel_sizes[i], 1)
 
+            # lstm
+            with tf.name_scope('lstm'):
+                hidden_dim = (last_out_height / 2) * (last_out_width / 2) * self.conv_layer_fms[-1]
+
             # fully-connected
             with tf.name_scope('full-connected'):
                 # Add in an initial layer to go from the last conv to the first fully-connected.
                 # Use /2 for the height and width because there is a 2x2 pooling layer
-                self.fc_layer_sizes.insert(
-                    0, (last_out_height / 2) * (last_out_width / 2) * self.conv_layer_fms[-1])
+
+                self.fc_layer_sizes.insert(0, hidden_dim)
 
                 fc_ws = []
                 fc_bs = []
@@ -115,19 +121,37 @@ class DScaleModel:
                     for i in xrange(len(conv_ws)):
                         # Convolve layer and activate with ReLU
                         preds = tf.nn.conv2d(
-                            last_input, conv_ws[i], [1, 1, 1, 1], padding=c.PADDING_D)
+                            last_input, conv_ws[i], [1, 1, 1, 1], padding = c.PADDING_D)
                         preds = tf.nn.relu(preds + conv_bs[i])
 
                         last_input = preds
 
                 # pooling layer
                 with tf.name_scope('pooling'):
-                    preds = tf.nn.max_pool(preds, [1, 2, 2, 1], [1, 2, 2, 1], padding=c.PADDING_D)
+                    preds = tf.nn.max_pool(preds, [1, 2, 2, 1], [1, 2, 2, 1], padding = c.PADDING_D)
 
                 # flatten preds for dense layers
                 shape = preds.get_shape().as_list()
                 # -1 can be used as one dimension to size dynamically
-                preds = tf.reshape(preds, [-1, shape[1] * shape[2] * shape[3]])
+                preds = tf.reshape(preds, [-1, (c.HIST_LEN + 1), shape[1] * shape[2] * shape[3]])
+
+                print 'preds:', preds.get_shape()
+                # conv_outputs = tf.stack(tf.split(preds, self.batch_size), 1)
+                conv_outputs = tf.transpose(preds, [1, 0, 2])
+
+                print 'conv_outputs:', conv_outputs.get_shape()
+                print 'hidden_dim:', hidden_dim
+
+                # lstm layers
+                with tf.name_scope('lstm'):
+                    lstm_cell = rnn.BasicLSTMCell(hidden_dim)
+                    dropout = rnn.DropoutWrapper(lstm_cell, output_keep_prob = c.KEEP_PROB)
+                    stacked_lstm = rnn.MultiRNNCell([dropout] * c.LAYERS)
+                    initial_state = stacked_lstm.zero_state(self.batch_size, tf.float32)
+                    outputs, state = tf.nn.dynamic_rnn(stacked_lstm, conv_outputs, initial_state =
+                                                initial_state, time_major = True, dtype = tf.float32,
+                                                scope = 'lstm_' + str(self.scale_index))
+                    preds = outputs[-1]
 
                 # fully-connected layers
                 with tf.name_scope('fully-connected'):

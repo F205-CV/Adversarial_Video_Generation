@@ -82,11 +82,11 @@ class DiscriminatorModel:
             with tf.name_scope('training'):
                 # global loss is the combined loss from every scale network
                 self.global_loss = adv_loss(self.scale_preds, self.labels)
-                self.global_step = tf.Variable(0, trainable=False, name='global_step')
-                self.optimizer = tf.train.GradientDescentOptimizer(c.LRATE_D, name='optimizer')
+                self.global_step = tf.Variable(0, trainable = False, name = 'global_step')
+                self.optimizer = tf.train.GradientDescentOptimizer(c.LRATE_D, name = 'optimizer')
                 self.train_op = self.optimizer.minimize(self.global_loss,
-                                                        global_step=self.global_step,
-                                                        name='train_op')
+                                                        global_step = self.global_step,
+                                                        name = 'train_op')
 
                 # add summaries to visualize in TensorBoard
                 loss_summary = tf.summary.scalar('loss_D', self.global_loss)
@@ -115,7 +115,7 @@ class DiscriminatorModel:
 
         g_feed_dict = {generator.input_frames_train: input_frames,
                        generator.gt_frames_train: gt_output_frames}
-        g_scale_preds = self.sess.run(generator.scale_preds_train, feed_dict=g_feed_dict)
+        g_scale_preds = self.sess.run(generator.scale_preds_train, feed_dict = g_feed_dict)
 
         ##
         # Create discriminator feed dict
@@ -132,17 +132,27 @@ class DiscriminatorModel:
                 resized_frame = resize(sknorm_img, [scale_net.height, scale_net.width, 3])
                 scaled_gt_output_frames[i] = (resized_frame - 0.5) * 2
 
-            # combine with resized gt_output_frames to get inputs for prediction
-            scaled_input_frames = np.concatenate([g_scale_preds[scale_num],
-                                                  scaled_gt_output_frames])
+            # resize input_frames and constract inputs for prediction
+            frame_len = c.HIST_LEN + 1
+            scaled_full_frames = np.empty([batch_size * frame_len * 2, scale_net.height,
+                                                scale_net.width, 3])
+            for i, img in enumerate(input_frames):
+                sknorm_img = (img / 2) + 0.5
+                resized_frame = resize(sknorm_img, [scale_net.height, scale_net.width, 3 * c.HIST_LEN])
+                base = np.stack(np.split((resized_frame - 0.5) * 2, c.HIST_LEN, 2))
+                scaled_full_frames[i * frame_len : (i + 1) * frame_len] = \
+                                                np.concatenate([base, g_scale_preds[scale_num][i, None]])
+                j = i + batch_size
+                scaled_full_frames[j * frame_len : (j + 1) * frame_len] = \
+                                                np.concatenate([base, scaled_gt_output_frames[i, None]])
 
             # convert to np array and add to feed_dict
-            feed_dict[scale_net.input_frames] = scaled_input_frames
+            feed_dict[scale_net.input_frames] = scaled_full_frames
+            # print 'scaled_full_frames:', np.shape(scaled_full_frames)
 
         # add labels for each image to feed_dict
         batch_size = np.shape(input_frames)[0]
-        feed_dict[self.labels] = np.concatenate([np.zeros([batch_size, 1]),
-                                                 np.ones([batch_size, 1])])
+        feed_dict[self.labels] = np.concatenate([np.zeros([batch_size, 1]), np.ones([batch_size, 1])])
 
         return feed_dict
 
@@ -172,7 +182,7 @@ class DiscriminatorModel:
 
         _, global_loss, global_step, summaries = self.sess.run(
             [self.train_op, self.global_loss, self.global_step, self.summaries],
-            feed_dict=feed_dict)
+            feed_dict = feed_dict)
 
         ##
         # User output

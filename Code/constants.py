@@ -204,3 +204,7 @@ SCALE_FC_LAYER_SIZES_D = [[512, 256, 1],
                           [1024, 512, 1],
                           [1024, 512, 1],
                           [1024, 512, 1]]
+# LSTM config
+KEEP_PROB = 0.75
+LAYERS = 3
+HIDDEN_DIM = [512, 1024, 1024, 1024]

@@ -73,7 +73,7 @@ class AVGRunner:
             batch = get_train_batch()
             print 'Training generator...'
             self.global_step = self.g_model.train_step(
-                batch, discriminator=(self.d_model if c.ADVERSARIAL else None))
+                batch, discriminator = (self.d_model if c.ADVERSARIAL else None))
 
             # save the models
             if self.global_step % c.MODEL_SAVE_FREQ == 0:
@@ -81,7 +81,7 @@ class AVGRunner:
                 print 'Saving models...'
                 self.saver.save(self.sess,
                                 c.MODEL_SAVE_DIR + 'model.ckpt',
-                                global_step=self.global_step)
+                                global_step = self.global_step)
                 print 'Saved models!'
                 print '-' * 30
 
